@@ -1,0 +1,5 @@
+{
+  "name": "Gmail Draft Helper",
+  "description": "A client-side tool to generate bulk BCC emails via Gmail web interface without server interaction.",
+  "requestFramePermissions": []
+}
