@@ -116,12 +116,29 @@ const App: React.FC = () => {
   };
 
   const handleLogout = () => {
-    if (token && window.google?.accounts?.oauth2) {
-      window.google.accounts.oauth2.revoke(token, () => {
-        setToken(null);
-      });
-    } else {
+    try {
+      // 状態を先に初期化（revokeの成否に関わらず実行）
+      const currentToken = token;
       setToken(null);
+      setPendingAction(null);
+      setProgress({ current: 0, total: 0, status: 'idle', logs: [] });
+
+      // Google OAuthトークンのrevoke（可能なら実行）
+      if (currentToken && window.google?.accounts?.oauth2) {
+        try {
+          window.google.accounts.oauth2.revoke(currentToken, () => {
+            // revokeのコールバック（成功・失敗に関わらず何もしない、既に状態は初期化済み）
+          });
+        } catch (revokeError) {
+          // revoke自体が失敗しても状態は既に初期化済みなので問題なし
+          console.warn('トークンのrevokeに失敗しましたが、ログアウト処理は完了しました:', revokeError);
+        }
+      }
+    } catch (error) {
+      // 予期しないエラーが発生しても状態は初期化済み
+      console.error('ログアウト処理中にエラーが発生しました:', error);
+      // エラーが発生しても状態は既に初期化されているので、アラートを表示して継続
+      alert('ログアウト処理中にエラーが発生しましたが、ログアウトは完了しました。');
     }
   };
 
