@@ -26,6 +26,8 @@ const App: React.FC = () => {
   const [mergeRows, setMergeRows] = useState<MergeRow[]>([]);
   const [mergeHeaders, setMergeHeaders] = useState<string[]>([]);
   const [mergeFileName, setMergeFileName] = useState<string>('');
+  // Excelから取得した列名（差込ボタン用）
+  const [uploadedColumns, setUploadedColumns] = useState<string[]>([]);
   
   // Additional Merge Fields (Excelに値がない場合の手動入力用)
   const [additionalFields, setAdditionalFields] = useState({
@@ -243,6 +245,28 @@ const App: React.FC = () => {
         headers[C] = cell ? String(cell.v || '') : '';
       }
       
+      // 列名を処理：重複列名をユニーク化（データ行でも使用するため、headers配列自体を更新）
+      const headerCount: { [key: string]: number } = {};
+      headers.forEach((header, index) => {
+        const trimmedHeader = header.trim();
+        // 空の列名はそのまま保持（データ行の処理で除外される）
+        if (!trimmedHeader) {
+          return;
+        }
+        
+        // 重複チェック
+        if (headerCount[trimmedHeader] !== undefined) {
+          headerCount[trimmedHeader]++;
+          const uniqueName = `${trimmedHeader}(${headerCount[trimmedHeader]})`;
+          headers[index] = uniqueName; // データ行でも使用するため更新
+        } else {
+          headerCount[trimmedHeader] = 0;
+        }
+      });
+      
+      // 表示用の列名リスト（空の列名を除外、重複列名も含む）
+      const uniqueColumns: string[] = headers.filter(h => h.trim() !== '');
+      
       // データ行を取得（ヘッダー行以降）
       // 【重要】各行は独立したオブジェクトとして作成し、空欄も空文字として正しく保持
       const data: MergeRow[] = [];
@@ -279,6 +303,7 @@ const App: React.FC = () => {
       if (data.length > 0) {
         setMergeRows(data);
         setMergeHeaders(headers.filter(h => h));
+        setUploadedColumns(uniqueColumns); // Excelから取得した列名を保存
         setMergeFileName(file.name);
         setPreviewRow(0); // 1行目をプレビューに設定
         setUndefinedTags(new Set()); // 未定義タグをリセット
@@ -700,274 +725,35 @@ const App: React.FC = () => {
                       <FileSpreadsheet size={16} className="mr-2" />
                       {mergeRows.length}行のデータを読み込みました
                     </p>
-                    <div className="flex flex-wrap gap-2 mt-2">
-                      {mergeHeaders.map(h => (
+                  </div>
+                )}
+
+                {/* Excelから取得した列名の差込ボタン */}
+                {uploadedColumns.length > 0 && (
+                  <div className="bg-green-50 p-4 rounded-md border border-green-200">
+                    <p className="text-sm text-green-800 font-medium mb-3 flex items-center">
+                      <FileSpreadsheet size={16} className="mr-2" />
+                      Excelから取得した項目（フォーカス中の入力欄に挿入）
+                    </p>
+                    <div className="flex flex-wrap gap-2 max-h-48 overflow-y-auto">
+                      {uploadedColumns.map(columnName => (
                         <button
-                          key={h}
+                          key={columnName}
                           type="button"
-                          onClick={() => insertPlaceholder(h, 'body')}
-                          className="px-2 py-1 bg-white border border-blue-200 rounded text-xs text-blue-600 hover:bg-blue-100 transition-colors shadow-sm"
-                          title="クリックして本文に挿入"
+                          onClick={() => insertAtCursor(columnName)}
+                          className="px-3 py-1.5 bg-white border border-green-300 rounded text-xs text-green-700 hover:bg-green-100 transition-colors shadow-sm font-medium"
+                          title={`フォーカスされている入力欄（件名 or 本文）に「{${columnName}}」を挿入`}
                         >
-                          {`{${h}}`}
+                          {`{${columnName}}`}
                         </button>
                       ))}
                     </div>
                   </div>
                 )}
 
-                {/* Additional Merge Fields */}
-                <div className="bg-amber-50 p-4 rounded-md border border-amber-200">
-                  <p className="text-sm text-amber-800 font-medium mb-3 flex items-center">
-                    <Info size={16} className="mr-2" />
-                    共通差込項目（全行に適用されます）
-                  </p>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-xs font-medium text-gray-700 mb-1">
-                        メールアドレス
-                        <button
-                          type="button"
-                          onClick={() => insertAtCursor('メールアドレス')}
-                          className="ml-2 text-amber-600 hover:text-amber-700 text-xs underline"
-                        >
-                          挿入
-                        </button>
-                      </label>
-                      <input
-                        type="text"
-                        className="block w-full shadow-sm border-gray-300 rounded-md p-2 border focus:ring-blue-500 focus:border-blue-500 text-sm"
-                        value={additionalFields.email}
-                        onChange={(e) => setAdditionalFields(prev => ({ ...prev, email: e.target.value }))}
-                        placeholder="例: example@example.com または Excelから自動読み込み"
-                      />
-                      <p className="text-xs text-gray-500 mt-1">※Excelに「メールアドレス」列があれば自動で読み込みます</p>
-                    </div>
-                    <div>
-                      <label className="block text-xs font-medium text-gray-700 mb-1">
-                        会社名
-                        <button
-                          type="button"
-                          onClick={() => insertAtCursor('会社名')}
-                          className="ml-2 text-amber-600 hover:text-amber-700 text-xs underline"
-                        >
-                          挿入
-                        </button>
-                      </label>
-                      <input
-                        type="text"
-                        className="block w-full shadow-sm border-gray-300 rounded-md p-2 border focus:ring-blue-500 focus:border-blue-500 text-sm"
-                        value={additionalFields.companyName}
-                        onChange={(e) => setAdditionalFields(prev => ({ ...prev, companyName: e.target.value }))}
-                        placeholder="任意の値を入力 または Excelから自動読み込み"
-                      />
-                      <p className="text-xs text-gray-500 mt-1">※Excelに「会社名」列があれば自動で読み込みます</p>
-                    </div>
-                    <div>
-                      <label className="block text-xs font-medium text-gray-700 mb-1">
-                        担当者名
-                        <button
-                          type="button"
-                          onClick={() => insertAtCursor('担当者名')}
-                          className="ml-2 text-amber-600 hover:text-amber-700 text-xs underline"
-                        >
-                          挿入
-                        </button>
-                      </label>
-                      <input
-                        type="text"
-                        className="block w-full shadow-sm border-gray-300 rounded-md p-2 border focus:ring-blue-500 focus:border-blue-500 text-sm"
-                        value={additionalFields.contactName}
-                        onChange={(e) => setAdditionalFields(prev => ({ ...prev, contactName: e.target.value }))}
-                        placeholder="任意の値を入力 または Excelから自動読み込み"
-                      />
-                      <p className="text-xs text-gray-500 mt-1">※Excelに「担当者名」列があれば自動で読み込みます</p>
-                    </div>
-                    <div>
-                      <label className="block text-xs font-medium text-gray-700 mb-1">
-                        案件名
-                        <button
-                          type="button"
-                          onClick={() => insertAtCursor('案件名')}
-                          className="ml-2 text-amber-600 hover:text-amber-700 text-xs underline"
-                        >
-                          挿入
-                        </button>
-                      </label>
-                      <input
-                        type="text"
-                        className="block w-full shadow-sm border-gray-300 rounded-md p-2 border focus:ring-blue-500 focus:border-blue-500 text-sm"
-                        value={additionalFields.projectName}
-                        onChange={(e) => setAdditionalFields(prev => ({ ...prev, projectName: e.target.value }))}
-                        placeholder="任意の値を入力 または Excelから自動読み込み"
-                      />
-                      <p className="text-xs text-gray-500 mt-1">※Excelに「案件名」列があれば自動で読み込みます</p>
-                    </div>
-                    <div>
-                      <label className="block text-xs font-medium text-gray-700 mb-1">
-                        URL
-                        <button
-                          type="button"
-                          onClick={() => insertAtCursor('URL')}
-                          className="ml-2 text-amber-600 hover:text-amber-700 text-xs underline"
-                        >
-                          挿入
-                        </button>
-                      </label>
-                      <input
-                        type="text"
-                        className="block w-full shadow-sm border-gray-300 rounded-md p-2 border focus:ring-blue-500 focus:border-blue-500 text-sm"
-                        value={additionalFields.url}
-                        onChange={(e) => setAdditionalFields(prev => ({ ...prev, url: e.target.value }))}
-                        placeholder="例: https://example.com または Excelから自動読み込み"
-                      />
-                      <p className="text-xs text-gray-500 mt-1">※Excelに「URL」列があれば自動で読み込みます</p>
-                    </div>
-                    <div>
-                      <label className="block text-xs font-medium text-gray-700 mb-1">
-                        日付１
-                        <button
-                          type="button"
-                          onClick={() => insertAtCursor('日付１')}
-                          className="ml-2 text-amber-600 hover:text-amber-700 text-xs underline"
-                        >
-                          挿入
-                        </button>
-                      </label>
-                      <input
-                        type="text"
-                        className="block w-full shadow-sm border-gray-300 rounded-md p-2 border focus:ring-blue-500 focus:border-blue-500 text-sm"
-                        value={additionalFields.date1}
-                        onChange={(e) => setAdditionalFields(prev => ({ ...prev, date1: e.target.value }))}
-                        placeholder="例: 2024-01-01 または Excelから自動読み込み"
-                      />
-                      <p className="text-xs text-gray-500 mt-1">※Excelに「日付１」列があれば自動で読み込みます</p>
-                    </div>
-                    <div>
-                      <label className="block text-xs font-medium text-gray-700 mb-1">
-                        日付２
-                        <button
-                          type="button"
-                          onClick={() => insertAtCursor('日付２')}
-                          className="ml-2 text-amber-600 hover:text-amber-700 text-xs underline"
-                        >
-                          挿入
-                        </button>
-                      </label>
-                      <input
-                        type="text"
-                        className="block w-full shadow-sm border-gray-300 rounded-md p-2 border focus:ring-blue-500 focus:border-blue-500 text-sm"
-                        value={additionalFields.date2}
-                        onChange={(e) => setAdditionalFields(prev => ({ ...prev, date2: e.target.value }))}
-                        placeholder="例: 2024-12-31 または Excelから自動読み込み"
-                      />
-                      <p className="text-xs text-gray-500 mt-1">※Excelに「日付２」列があれば自動で読み込みます</p>
-                    </div>
-                    <div>
-                      <label className="block text-xs font-medium text-gray-700 mb-1">
-                        予備１
-                        <button
-                          type="button"
-                          onClick={() => insertAtCursor('予備１')}
-                          className="ml-2 text-amber-600 hover:text-amber-700 text-xs underline"
-                        >
-                          挿入
-                        </button>
-                      </label>
-                      <input
-                        type="text"
-                        className="block w-full shadow-sm border-gray-300 rounded-md p-2 border focus:ring-blue-500 focus:border-blue-500 text-sm"
-                        value={additionalFields.reserve1}
-                        onChange={(e) => setAdditionalFields(prev => ({ ...prev, reserve1: e.target.value }))}
-                        placeholder="任意の値を入力 または Excelから自動読み込み"
-                      />
-                      <p className="text-xs text-gray-500 mt-1">※Excelに「予備１」列があれば自動で読み込みます</p>
-                    </div>
-                    <div>
-                      <label className="block text-xs font-medium text-gray-700 mb-1">
-                        予備２
-                        <button
-                          type="button"
-                          onClick={() => insertAtCursor('予備２')}
-                          className="ml-2 text-amber-600 hover:text-amber-700 text-xs underline"
-                        >
-                          挿入
-                        </button>
-                      </label>
-                      <input
-                        type="text"
-                        className="block w-full shadow-sm border-gray-300 rounded-md p-2 border focus:ring-blue-500 focus:border-blue-500 text-sm"
-                        value={additionalFields.reserve2}
-                        onChange={(e) => setAdditionalFields(prev => ({ ...prev, reserve2: e.target.value }))}
-                        placeholder="任意の値を入力 または Excelから自動読み込み"
-                      />
-                      <p className="text-xs text-gray-500 mt-1">※Excelに「予備２」列があれば自動で読み込みます</p>
-                    </div>
-                    <div>
-                      <label className="block text-xs font-medium text-gray-700 mb-1">
-                        予備３
-                        <button
-                          type="button"
-                          onClick={() => insertAtCursor('予備３')}
-                          className="ml-2 text-amber-600 hover:text-amber-700 text-xs underline"
-                        >
-                          挿入
-                        </button>
-                      </label>
-                      <input
-                        type="text"
-                        className="block w-full shadow-sm border-gray-300 rounded-md p-2 border focus:ring-blue-500 focus:border-blue-500 text-sm"
-                        value={additionalFields.reserve3}
-                        onChange={(e) => setAdditionalFields(prev => ({ ...prev, reserve3: e.target.value }))}
-                        placeholder="任意の値を入力 または Excelから自動読み込み"
-                      />
-                      <p className="text-xs text-gray-500 mt-1">※Excelに「予備３」列があれば自動で読み込みます</p>
-                    </div>
-                    <div>
-                      <label className="block text-xs font-medium text-gray-700 mb-1">
-                        予備４
-                        <button
-                          type="button"
-                          onClick={() => insertAtCursor('予備４')}
-                          className="ml-2 text-amber-600 hover:text-amber-700 text-xs underline"
-                        >
-                          挿入
-                        </button>
-                      </label>
-                      <input
-                        type="text"
-                        className="block w-full shadow-sm border-gray-300 rounded-md p-2 border focus:ring-blue-500 focus:border-blue-500 text-sm"
-                        value={additionalFields.reserve4}
-                        onChange={(e) => setAdditionalFields(prev => ({ ...prev, reserve4: e.target.value }))}
-                        placeholder="任意の値を入力 または Excelから自動読み込み"
-                      />
-                      <p className="text-xs text-gray-500 mt-1">※Excelに「予備４」列があれば自動で読み込みます</p>
-                    </div>
-                  </div>
-                </div>
               </div>
             )}
 
-            {/* --- MERGE TOOLBAR (差込モードのみ) --- */}
-            {mode === 'merge' && (
-              <div id="merge-toolbar" className="border-t border-gray-100 pt-4">
-                <p className="text-xs text-gray-600 mb-2 font-medium">差込項目クイック挿入ツールバー（フォーカスされている入力欄に挿入）:</p>
-                <div className="flex flex-wrap gap-2 p-3 bg-gray-50 rounded-lg border border-gray-200">
-                  {MERGE_FIELD_NAMES.map((fieldName) => (
-                    <button
-                      key={fieldName}
-                      type="button"
-                      data-field={fieldName}
-                      onClick={() => insertAtCursor(fieldName)}
-                      className="px-3 py-1.5 bg-green-500 hover:bg-green-600 text-white text-xs rounded transition-colors shadow-sm font-medium"
-                      title={`フォーカスされている入力欄（件名 or 本文）に「{${fieldName}}」を挿入`}
-                    >
-                      {`{${fieldName}}`}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
 
             {/* --- COMMON INPUTS --- */}
             <div className="border-t border-gray-100 pt-6 space-y-4">
