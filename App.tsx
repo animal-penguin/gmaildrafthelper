@@ -225,6 +225,60 @@ const App: React.FC = () => {
     return String(value);
   };
 
+  /**
+   * メールアドレス列を柔軟に検出する関数
+   * 列名のトリム、全角/半角の揺れ、大文字小文字の違いを吸収
+   * 例: メールアドレス, Email, E-mail, email, mail などを許容
+   */
+  const findEmailColumn = (row: MergeRow, availableColumns: string[]): string | null => {
+    // 正規化関数：トリム、小文字化、全角→半角変換、ハイフン/アンダースコアの統一
+    const normalize = (str: string): string => {
+      return str
+        .trim()
+        .toLowerCase()
+        .replace(/[ー－−‐‑‒–—―─━]/g, '-') // 全角ハイフン類を半角ハイフンに統一
+        .replace(/[＿_]/g, '_') // アンダースコアを統一
+        .replace(/\s+/g, '') // 空白を除去
+        .replace(/[ａ-ｚＡ-Ｚ０-９]/g, (s) => {
+          // 全角英数字を半角に変換
+          return String.fromCharCode(s.charCodeAt(0) - 0xFEE0);
+        });
+    };
+
+    // 許容されるメールアドレス列名のパターン（正規化後）
+    const emailPatterns = [
+      'メールアドレス',
+      'email',
+      'e-mail',
+      'mail',
+      'mailaddress',
+      'mail_address',
+      'emailaddress',
+      'email_address',
+      'to',
+      '宛先',
+      '送信先'
+    ];
+
+    // まず、利用可能な列名から検索
+    for (const column of availableColumns) {
+      const normalized = normalize(column);
+      if (emailPatterns.some(pattern => normalized === normalize(pattern))) {
+        return column; // 元の列名を返す（大文字小文字や全角半角を保持）
+      }
+    }
+
+    // 利用可能な列名から見つからない場合、rowオブジェクトのキーから直接検索
+    for (const key in row) {
+      const normalized = normalize(key);
+      if (emailPatterns.some(pattern => normalized === normalize(pattern))) {
+        return key;
+      }
+    }
+
+    return null;
+  };
+
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -311,8 +365,13 @@ const App: React.FC = () => {
         // Excelから読み込んだ値でadditionalFieldsを初期化（該当列があれば、ただし空でない場合のみ）
         // 注意: 全角・半角の違いに対応（日付１/日付1、予備１/予備1など）
         const firstRow = data[0];
+        
+        // メールアドレス列を柔軟に検出
+        const emailColumnName = findEmailColumn(firstRow, uniqueColumns);
+        const emailValue = emailColumnName && firstRow[emailColumnName] ? String(firstRow[emailColumnName]) : null;
+        
         setAdditionalFields(prev => ({
-          email: firstRow['メールアドレス'] ? String(firstRow['メールアドレス']) : prev.email,
+          email: emailValue || prev.email,
           companyName: firstRow['会社名'] ? String(firstRow['会社名']) : prev.companyName,
           contactName: firstRow['担当者名'] ? String(firstRow['担当者名']) : prev.contactName,
           projectName: firstRow['案件名'] ? String(firstRow['案件名']) : prev.projectName,
@@ -519,17 +578,30 @@ const App: React.FC = () => {
     let failCount = 0;
     const allUndefinedTags = new Set<string>();
 
+    // メールアドレス列を検出（最初の行から判定、全行で同じ列名を使用）
+    const emailColumnName = mergeRows.length > 0 ? findEmailColumn(mergeRows[0], uploadedColumns) : null;
+    
+    if (!emailColumnName && mergeRows.length > 0) {
+      log(`エラー: メールアドレス列が見つかりません。Email, E-mail, email, mail, メールアドレス などの列名を使用してください。`);
+      setProgress(prev => ({ ...prev, status: 'error' }));
+      return;
+    }
+
+    if (emailColumnName) {
+      log(`メールアドレス列を検出: 「${emailColumnName}」`);
+    }
+
     for (let i = 0; i < mergeRows.length; i++) {
       // 【重要】各行を独立して取得（前の行の値を参照しない）
       const row = mergeRows[i];
       
-      // メールアドレス列を日本語ヘッダー名で完全一致で検索
+      // 検出したメールアドレス列から値を取得
       // その行の値のみを使用し、空文字列の場合はnullとして扱う
-      const emailValue = row.hasOwnProperty('メールアドレス') ? row['メールアドレス'] : null;
+      const emailValue = emailColumnName && row.hasOwnProperty(emailColumnName) ? row[emailColumnName] : null;
       const email = emailValue != null && String(emailValue).trim() !== '' ? String(emailValue) : null;
 
       if (!email) {
-        log(`[行 ${i + 1}] スキップ: 「メールアドレス」列が見つかりません。`);
+        log(`[行 ${i + 1}] スキップ: メールアドレスが空です。`);
         failCount++;
         continue;
       }
