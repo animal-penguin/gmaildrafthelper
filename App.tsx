@@ -61,6 +61,9 @@ const App: React.FC = () => {
   
   // Pending Action (for Resume after login)
   const [pendingAction, setPendingAction] = useState<'bulk' | 'merge' | null>(null);
+  
+  // Drag & Drop State
+  const [isDragging, setIsDragging] = useState<boolean>(false);
 
   // --- Effects ---
 
@@ -279,8 +282,7 @@ const App: React.FC = () => {
     return null;
   };
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+  const handleFileUpload = (file: File | null) => {
     if (!file) return;
 
     const reader = new FileReader();
@@ -772,16 +774,52 @@ const App: React.FC = () => {
             {/* --- MERGE MODE UI --- */}
             {mode === 'merge' && (
               <div className="space-y-4 animate-fade-in">
-                <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:bg-gray-50 transition-colors bg-gray-50">
+                <div 
+                  className={`border-2 border-dashed rounded-lg p-6 text-center transition-colors ${
+                    isDragging 
+                      ? 'border-blue-500 bg-blue-100' 
+                      : 'border-gray-300 hover:bg-gray-50 bg-gray-50'
+                  }`}
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setIsDragging(true);
+                  }}
+                  onDragLeave={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setIsDragging(false);
+                  }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setIsDragging(false);
+                    
+                    const files = e.dataTransfer.files;
+                    if (files.length > 0) {
+                      const file = files[0];
+                      // ファイル形式のチェック
+                      const validExtensions = ['.xlsx', '.xls', '.csv'];
+                      const fileName = file.name.toLowerCase();
+                      const isValidFile = validExtensions.some(ext => fileName.endsWith(ext));
+                      
+                      if (isValidFile) {
+                        handleFileUpload(file);
+                      } else {
+                        alert('Excelファイル (.xlsx, .xls, .csv) をアップロードしてください。');
+                      }
+                    }
+                  }}
+                >
                   <input
                     type="file"
                     accept=".xlsx, .xls, .csv"
                     className="hidden"
                     id="file-upload"
-                    onChange={handleFileUpload}
+                    onChange={(e) => handleFileUpload(e.target.files?.[0] || null)}
                   />
                   <label htmlFor="file-upload" className="cursor-pointer w-full block">
-                    <Upload size={32} className="mx-auto text-blue-500 mb-2" />
+                    <Upload size={32} className={`mx-auto mb-2 ${isDragging ? 'text-blue-600' : 'text-blue-500'}`} />
                     <span className="block text-sm font-medium text-gray-900">
                       {mergeFileName || "Excelファイルをアップロード"}
                     </span>
